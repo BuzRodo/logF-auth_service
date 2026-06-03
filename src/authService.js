@@ -10,7 +10,13 @@ const {
 } = require('./constants');
 const { state } = require('./store');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-only-change-me';
+const FALLBACK_JWT_SECRET = 'dev-only-change-me';
+const JWT_SECRET = process.env.JWT_SECRET || FALLBACK_JWT_SECRET;
+const DUMMY_PASSWORD_HASH = '$2b$12$4KLf7ys7.BNiVoUm4JdQzexgKd44M9xT8RyqMeb7Rz8/o/4L5xSuK';
+
+if (process.env.NODE_ENV === 'production' && JWT_SECRET === FALLBACK_JWT_SECRET) {
+  throw new Error('JWT_SECRET is required in production');
+}
 
 function now() {
   return Date.now();
@@ -21,7 +27,15 @@ function hashToken(token) {
 }
 
 function validatePassword(password) {
-  return typeof password === 'string' && /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password) && password.length >= 8;
+  if (typeof password !== 'string') {
+    return false;
+  }
+
+  const hasLower = /[a-z]/.test(password);
+  const hasUpper = /[A-Z]/.test(password);
+  const hasDigit = /\d/.test(password);
+  const hasMinLength = password.length >= 8;
+  return hasLower && hasUpper && hasDigit && hasMinLength;
 }
 
 function sanitizeUser(user) {
@@ -38,8 +52,15 @@ function addAudit(event, userId, metadata = {}) {
 }
 
 async function register({ email, password }) {
-  if (!email || !password || !validatePassword(password)) {
-    throw { status: 400, message: 'Invalid registration payload' };
+  if (!email || !password) {
+    throw { status: 400, message: 'Email and password are required' };
+  }
+
+  if (!validatePassword(password)) {
+    throw {
+      status: 400,
+      message: 'Password must have at least 8 characters, one uppercase, one lowercase and one digit'
+    };
   }
 
   const normalizedEmail = String(email).trim().toLowerCase();
@@ -122,8 +143,10 @@ async function login({ email, password }) {
   const normalizedEmail = String(email).trim().toLowerCase();
   const userId = state.usersByEmail.get(normalizedEmail);
   const user = userId ? state.users.get(userId) : null;
+  const passwordHash = user ? user.passwordHash : DUMMY_PASSWORD_HASH;
+  const passwordMatches = await bcrypt.compare(password, passwordHash);
 
-  if (!user || !user.emailVerified || !(await bcrypt.compare(password, user.passwordHash))) {
+  if (!user || !user.emailVerified || !passwordMatches) {
     throw { status: 401, message: 'Invalid credentials' };
   }
 

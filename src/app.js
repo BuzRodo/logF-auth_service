@@ -119,7 +119,7 @@ app.post('/auth/password/reset', authLimiter, async (req, res) => {
   }
 });
 
-app.get('/auth/audit', authGuard, rbacGuard({ roles: ['ADMIN'], permissions: ['access:audit'] }), (req, res) => {
+app.get('/auth/audit', authLimiter, authGuard, rbacGuard({ roles: ['ADMIN'], permissions: ['access:audit'] }), (req, res) => {
   res.json({ items: authService.state.auditLogs });
 });
 
